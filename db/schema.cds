@@ -17,6 +17,16 @@ type DealerStatus : String enum {
     INACTIVE;
 }
 
+type PricingStatus : String enum {
+    DRAFT;
+    PENDING;
+    SUBMITTED;
+    ACTIVE;
+    REJECTED;
+    EXPIRED;
+    INACTIVE;
+}
+
 
 /* =========================================================
    DEALER TYPE
@@ -66,10 +76,6 @@ entity Dealer : cuid, managed {
     remarks : String(500);
     documents : Composition of many DealerDocuments
         on documents.dealer = $self;
-
-    analytics : Association to many DealerAnalytics
-        on analytics.dealer = $self;
-
 
     approvalHistory : Composition of many OnboardingApprovals
         on approvalHistory.dealer = $self;
@@ -180,11 +186,6 @@ entity Products : cuid, managed {
     prices : Association to many PriceMaster
         on prices.product = $self;
 
-    salesAnalytics : Association to many ProductSalesAnalytics
-        on salesAnalytics.product = $self;
-    
-    pricingAnalytics : Association to many PricingAnalytics
-        on pricingAnalytics.product = $self;
     inventory : Association to many Inventory
         on inventory.product = $self;
 }
@@ -211,10 +212,10 @@ entity Regions : cuid {
    ========================================================= */
 
 entity PriceMaster : cuid, managed {
-
+// gst, transportation - based on region , net price 
     basePrice : Decimal(15,2) @mandatory;
 
-    discount : Decimal(15,2) default 0;
+    discount : Decimal(15,2) default 0; // based on Dealer
 
     tax : Decimal(15,2) default 0;
 
@@ -226,7 +227,7 @@ entity PriceMaster : cuid, managed {
 
     validTo : Date @mandatory;
 
-    status : String(20) default 'ACTIVE';
+    status : PricingStatus default 'DRAFT';
 
     product : Association to Products @mandatory;
 
@@ -268,131 +269,6 @@ entity PriceExpiryLog : cuid {
     triggeredBy  : String(50); 
 }
 
-
-/* =========================================================
-   DEALER ANALYTICS
-   ========================================================= */
-
-entity DealerAnalytics : cuid, managed {
-
-    dealer : Association to Dealer @mandatory;
-
-    analyticsMonth : Integer @mandatory;
-
-    analyticsYear : Integer @mandatory;
-
-    totalPOCount : Integer default 0;
-
-    approvedPOCount : Integer default 0;
-
-    rejectedPOCount : Integer default 0;
-
-    deliveredPOCount : Integer default 0;
-
-    totalPurchaseValue : Decimal(15,2) default 0;
-
-    totalTaxAmount : Decimal(15,2) default 0;
-
-    averagePOValue : Decimal(15,2) default 0;
-}
-
-
-/* =========================================================
-   PURCHASE ORDER ANALYTICS
-   ========================================================= */
-
-entity PurchaseOrderAnalytics : cuid, managed {
-
-    analyticsMonth : Integer @mandatory;
-
-    analyticsYear : Integer @mandatory;
-
-    totalPOCount : Integer default 0;
-
-    approvedPOCount : Integer default 0;
-
-    rejectedPOCount : Integer default 0;
-
-    deliveredPOCount : Integer default 0;
-
-    totalPurchaseValue : Decimal(15,2) default 0;
-
-    totalTaxAmount : Decimal(15,2) default 0;
-
-    averagePOValue : Decimal(15,2) default 0;
-}
-
-
-/* =========================================================
-   PRODUCT SALES ANALYTICS
-   ========================================================= */
-
-entity ProductSalesAnalytics : cuid, managed {
-
-    product : Association to Products @mandatory;
-
-    analyticsMonth : Integer @mandatory;
-
-    analyticsYear : Integer @mandatory;
-
-    totalQuantity : Integer default 0;
-
-    totalPOCount : Integer default 0;
-
-    totalSalesValue : Decimal(15,2) default 0;
-
-    averageUnitPrice : Decimal(15,2) default 0;
-}
-
-
-/* =========================================================
-   PRICING ANALYTICS
-   ========================================================= */
-
-entity PricingAnalytics : cuid, managed {
-
-    product : Association to Products @mandatory;
-
-    analyticsMonth : Integer @mandatory;
-
-    analyticsYear : Integer @mandatory;
-
-    averageBasePrice : Decimal(15,2) default 0;
-
-    averageDiscount : Decimal(15,2) default 0;
-
-    averageFinalPrice : Decimal(15,2) default 0;
-
-    totalDiscountAmount : Decimal(15,2) default 0;
-
-    priceChangeCount : Integer default 0;
-}
-
-
-/* =========================================================
-   MONTHLY ANALYTICS
-   ========================================================= */
-
-entity MonthlyAnalytics : cuid, managed {
-
-    analyticsMonth : Integer @mandatory;
-
-    analyticsYear : Integer @mandatory;
-
-    totalPOCount : Integer default 0;
-
-    totalPurchaseValue : Decimal(15,2) default 0;
-
-    totalQuantity : Integer default 0;
-
-    totalDiscountAmount : Decimal(15,2) default 0;
-
-    totalTaxAmount : Decimal(15,2) default 0;
-
-    averagePOValue : Decimal(15,2) default 0;
-
-    salesGrowthPercentage : Decimal(5,2) default 0;
-}
 type InventoryStatus : String enum {
     AVAILABLE;
     LOW_STOCK;
@@ -416,6 +292,8 @@ entity Warehouses : cuid, managed {
     city : String(50);
 
     state : String(50);
+
+    region : String(20);
 
     country : String(50);
 

@@ -2,14 +2,14 @@
   "name": "TAFE",
   "version": "1.0.0",
   "dependencies": {
-    "@cap-js/hana": "^2.8.1",
+    "@cap-js/hana": "^3",
     "@sap-cloud-sdk/connectivity": "^4.9.1",
     "@sap-cloud-sdk/http-client": "^4.9.1",
-    "@sap/cds": "^9"
+    "@sap/cds": "^10.1.0"
   },
   "devDependencies": {
-    "@cap-js/sqlite": "^2.4",
-    "@sap/cds-dk": "^9"
+    "@cap-js/sqlite": "^3.1.0",
+    "@sap/cds-dk": "^10.1.0"
   },
   "scripts": {
     "start": "cds-serve"

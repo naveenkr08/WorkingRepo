@@ -24,7 +24,7 @@ module.exports = cds.service.impl(async function () {
     function deriveStatus(validTo) {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        return new Date(validTo) < today ? 'EXPIRED' : 'ACTIVE';
+        return new Date(validTo) < today ? 'EXPIRED' : 'PENDING';
     }
 
     function makeReadOnlyGuard(entityLabel) {
@@ -324,6 +324,7 @@ module.exports = cds.service.impl(async function () {
 
     // called on a cron by SAP Job Scheduler (also callable manually)
     this.on('expirePrices', async (req) => {
+
         const today = new Date().toISOString().slice(0, 10);
 
         const expiredCandidates = await SELECT.from(PriceMaster)

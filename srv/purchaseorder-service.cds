@@ -19,6 +19,8 @@ service PurchaseOrderService {
     entity Regions as projection on db.Regions; 
 
     entity Dealers as projection on db.Dealer;
+
+    entity warehouse as projection on db.Warehouses;
     entity PriceMaster as projection on db.PriceMaster
         actions {
 

@@ -11,6 +11,66 @@ module.exports = cds.service.impl(async function () {
     const { SELECT, UPDATE } = cds.ql;
 
 
+    // =========================================================
+    // STATE -> REGION MAPPING
+    // =========================================================
+
+    const regionMap = {
+
+        NORTH: [
+            "Himachal Pradesh",
+            "Punjab",
+            "Haryana",
+            "Uttarakhand",
+            "Jammu & Kashmir",
+            "Ladakh",
+            "Chandigarh",
+            "Delhi"
+        ],
+
+        EAST: [
+            "Bihar",
+            "Jharkhand",
+            "Odisha",
+            "West Bengal",
+            "Sikkim",
+            "Arunachal Pradesh",
+            "Assam",
+            "Manipur",
+            "Meghalaya",
+            "Mizoram",
+            "Nagaland",
+            "Tripura",
+            "Andaman & Nicobar Islands"
+        ],
+
+        WEST: [
+            "Rajasthan",
+            "Gujarat",
+            "Maharashtra",
+            "Goa",
+            "Dadra & Nagar Haveli",
+            "Daman & Diu"
+        ],
+
+        CENTRAL: [
+            "Madhya Pradesh",
+            "Chhattisgarh",
+            "Uttar Pradesh"
+        ],
+
+        SOUTH: [
+            "Andhra Pradesh",
+            "Telangana",
+            "Karnataka",
+            "Tamil Nadu",
+            "Kerala",
+            "Puducherry",
+            "Lakshadweep"
+        ]
+    };
+
+
     // ============================================================
     // AUTO GENERATE WAREHOUSE CODE
     // ============================================================
@@ -78,6 +138,68 @@ module.exports = cds.service.impl(async function () {
 
         req.data.warehouseCode =
             `WH-${cityCode}-${nextNumber}`;
+
+        const state = req.data.state?.trim();
+
+        if (!state) {
+            req.error( 400, "State is mandatory to determine the warehouse region." );
+        }
+
+        let foundRegion = null;
+
+        // Find the region based on the state
+        for (const [region, states] of Object.entries(regionMap)) {
+
+            if (states.some( s => s.toLowerCase() === state.toLowerCase() )) {
+                foundRegion = region;
+                break;
+            }
+
+        }
+
+        if (!foundRegion) {
+            req.error( 400, `State/UT '${state}' is not mapped to any region.` );
+        }
+
+        // Automatically populate region
+        req.data.region = foundRegion;
+    });
+
+    this.before("UPDATE", "Warehouses", async (req) => {
+
+        // Only calculate region when state is being changed
+        if (!req.data.state) {
+            return;
+        }
+
+        const state = req.data.state.trim();
+
+        let foundRegion = null;
+
+        for (const [region, states] of Object.entries(regionMap)) {
+
+            if (states.some(
+                s => s.toLowerCase() === state.toLowerCase()
+            )) {
+                foundRegion = region;
+                break;
+            }
+
+        }
+
+
+        if (!foundRegion) {
+
+            req.error(
+                400,
+                `State/UT '${state}' is not mapped to any region.`
+            );
+
+        }
+
+
+        req.data.region = foundRegion;
+
     });
 
 
