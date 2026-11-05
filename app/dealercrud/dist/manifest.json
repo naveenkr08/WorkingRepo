@@ -1,0 +1,228 @@
+{
+	"_version": "1.89.0",
+	"sap.app": {
+		"id": "dc.dealercrud",
+		"type": "application",
+		"i18n": {
+			"bundleUrl": "i18n/i18n.properties",
+			"supportedLocales": [
+				""
+			]
+		},
+		"applicationVersion": {
+			"version": "0.0.1"
+		},
+		"title": "{{appTitle}}",
+		"description": "{{appDescription}}",
+		"resources": "resources.json",
+		"sourceTemplate": {
+			"id": "@sap/generator-fiori:lrop",
+			"version": "1.33.0",
+			"toolsId": "2ad6bed9-4484-402e-836e-9e9452e3dab9"
+		},
+		"dataSources": {
+			"mainService": {
+				"uri": "/odata/v4/dealer/",
+				"type": "OData",
+				"settings": {
+					"annotations": [],
+					"odataVersion": "4.0"
+				}
+			}
+		},
+		"crossNavigation": {
+			"inbounds": {
+				"dealer-manage": {
+					"semanticObject": "Dealer",
+					"action": "manage",
+					"title": "{{dealer-manage.flpTitle}}",
+					"subTitle": "{{dealer-manage.flpSubtitle}}",
+					"signature": {
+						"parameters": {},
+						"additionalParameters": "allowed"
+					}
+				}
+			}
+		}
+	},
+	"sap.ui": {
+		"technology": "UI5",
+		"icons": {
+			"icon": "",
+			"favIcon": "",
+			"phone": "",
+			"phone@2": "",
+			"tablet": "",
+			"tablet@2": ""
+		},
+		"deviceTypes": {
+			"desktop": true,
+			"tablet": true,
+			"phone": true
+		}
+	},
+	"sap.ui5": {
+		"flexEnabled": true,
+		"dependencies": {
+			"minUI5Version": "1.153.0",
+			"libs": {
+				"sap.m": {},
+				"sap.ui.core": {},
+				"sap.fe.templates": {}
+			}
+		},
+		"contentDensities": {
+			"compact": true,
+			"cozy": true
+		},
+		"models": {
+			"i18n": {
+				"type": "sap.ui.model.resource.ResourceModel",
+				"settings": {
+					"bundleName": "dc.dealercrud.i18n.i18n",
+					"supportedLocales": [
+						""
+					]
+				}
+			},
+			"": {
+				"dataSource": "mainService",
+				"preload": true,
+				"settings": {
+					"operationMode": "Server",
+					"autoExpandSelect": true,
+					"earlyRequests": true
+				}
+			},
+			"@i18n": {
+				"type": "sap.ui.model.resource.ResourceModel",
+				"uri": "i18n/i18n.properties",
+				"settings": {
+					"supportedLocales": [
+						""
+					]
+				}
+			}
+		},
+		"resources": {
+			"css": []
+		},
+		"routing": {
+			"config": {},
+			"routes": [
+				{
+					"pattern": ":?query:",
+					"name": "DealersList",
+					"target": "DealersList"
+				},
+				{
+					"pattern": "Dealers({key}):?query:",
+					"name": "DealersObjectPage",
+					"target": "DealersObjectPage"
+				}
+			],
+			"targets": {
+				"DealersList": {
+					"type": "Component",
+					"id": "DealersList",
+					"name": "sap.fe.templates.ListReport",
+					"options": {
+						"settings": {
+							"contextPath": "/Dealers",
+							"variantManagement": "Page",
+							"navigation": {
+								"Dealers": {
+									"detail": {
+										"route": "DealersObjectPage"
+									}
+								}
+							},
+							"controlConfiguration": {
+								"@com.sap.vocabularies.UI.v1.LineItem": {
+									"actions": {
+										"submitDealers": {
+											"press": "dc.dealercrud.ext.controller.DealerFile.onSubmitDealers",
+											"text": "{i18n>submit}",
+											"requiresSelection": true,
+											"visible": true,
+											"enabled": true
+										},
+										"approveDealers": {
+											"press": "dc.dealercrud.ext.controller.DealerFile.onApprove",
+											"text": "{i18n>approve}",
+											"requiresSelection": true,
+											"visible": true,
+											"enabled": true
+										},
+										"exportDealers": {
+											"press": "dc.dealercrud.ext.controller.DealerFile.onExport",
+											"text": "{i18n>export}",
+											"requiresSelection": true,
+											"visible": true,
+											"enabled": true
+										}
+									},
+									"tableSettings": {
+										"type": "ResponsiveTable",
+										"selectionMode": "Multi",
+										"enableExport": true,
+										"creationMode": {
+											"name": "NewPage"
+										}
+									}
+								}
+							}
+						}
+					}
+				},
+				"DealersObjectPage": {
+					"type": "Component",
+					"id": "DealersObjectPage",
+					"name": "sap.fe.templates.ObjectPage",
+					"options": {
+						"settings": {
+							"editableHeaderContent": false,
+							"contextPath": "/Dealers",
+							"content": {
+								"header": {
+									"actions": {
+										"printDealer": {
+											"press": "dc.dealercrud.ext.controller.DealerObject.onPrint",
+											"text": "{i18n>print}",
+											"visible": true,
+											"enabled": true
+										}
+									}
+								},
+								"footer": {
+									"actions": {
+										"sendForApproval": {
+											"press": "dc.dealercrud.ext.controller.DealerObject.onSendForApproval",
+											"text": "{i18n>sendForApproval}",
+											"visible": true,
+											"enabled": "{= ${status} === 'PENDING' }"
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"flexBundle": false
+	},
+	"sap.fiori": {
+		"registrationIds": [],
+		"archeType": "transactional"
+	},
+	"sap.fe": {
+		"app": {
+			"enableLazyLoading": true
+		}
+	},
+	"sap.cloud": {
+		"public": true,
+		"service": "TAFE.service"
+	}
+}

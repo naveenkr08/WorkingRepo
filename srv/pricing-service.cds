@@ -23,7 +23,7 @@ service PricingService @(path: '/pricing') {
     };
 
     //  entry point called by SAP Job Scheduler on a cron schedule
-    action expirePrices() returns {
+    action expirePrices(ID:UUID) returns {
         expiredCount : Integer;
         message      : String;
     };

@@ -10,7 +10,9 @@ const {
     Regions,
     PriceMaster,
     PriceHistory,
-    PriceExpiryLog
+    PriceExpiryLog,
+    Inventory,
+    warehouse
 } = cds.entities("tafe.dealer");
 
 // ============================================================
@@ -22,6 +24,7 @@ const WORKFLOW_DEFINITION_ID =
     "us10.6a738d3btrial.purchaseorderapproval.approvalProcess";
 
 const DESTINATION_NAME = "purchasebpi";
+//const { Warehouses } = this.entities;
 
 
 // ============================================================
@@ -133,7 +136,7 @@ module.exports = cds.service.impl(async function () {
         new Date().getFullYear();
 
     req.data.poNumber =
-        `PO-${year}-${nextValue}`;
+        `SO-${year}-${nextValue}`;
 });
 
 
@@ -172,7 +175,7 @@ module.exports = cds.service.impl(async function () {
 
             return req.reject(
                 400,
-                "PO number cannot be modified."
+            "SO number cannot be modified."
             );
         }
 
@@ -629,70 +632,145 @@ module.exports = cds.service.impl(async function () {
     // APPROVE PURCHASE ORDER
     // ============================================================
 
-    this.on(
-        "approvePO",
-        "PurchaseOrders",
-        async (req) => {
+    // ============================================================
+// APPROVE PURCHASE ORDER
+// ============================================================
 
-            const poId =
-                req.params[0].ID;
+this.on("approvePO", "PurchaseOrders", async (req) => {
+    const poId = req.params[0].ID;
 
+    // 1. Get Purchase Order
+    const po = await SELECT.one
+        .from(PurchaseOrders)
+        .where({ ID: poId });
 
-            // ----------------------------------------------------
-            // Get Purchase Order
-            // ----------------------------------------------------
+    if (!po) {
+        return req.reject(404, "Purchase Order not found.");
+    }
 
-            const po =
-                await SELECT.one
-                    .from(PurchaseOrders)
-                    .where({
-                        ID: poId
-                    });
+    // 2. Status validation
+    if (po.status !== "SUBMITTED") {
+        return req.reject(
+            400,
+            "Only a SUBMITTED Purchase Order can be approved."
+        );
+    }
 
+    // 3. Get PO Line Items
+    const items = await SELECT
+        .from(POLineItems)
+        .where({ purchaseOrder_ID: poId });
 
-            if (!po) {
+    if (!items.length) {
+        return req.reject(
+            400,
+            "Cannot approve a Purchase Order with no line items."
+        );
+    }
 
-                return req.reject(
-                    404,
-                    "Purchase Order not found."
-                );
-            }
+    // 4. Combine quantities for duplicate products
+    const requiredQuantities = new Map();
 
+    for (const item of items) {
+        const quantity = Number(item.quantity || 0);
 
-            // ----------------------------------------------------
-            // Status validation
-            // ----------------------------------------------------
-
-            if (po.status !== "SUBMITTED") {
-
-                return req.reject(
-                    400,
-                    "Only a SUBMITTED Purchase Order can be approved."
-                );
-            }
-
-
-            // ----------------------------------------------------
-            // Update status
-            // ----------------------------------------------------
-
-            await UPDATE(PurchaseOrders)
-                .set({
-                    status: "APPROVED",
-                    rejectionReason: null
-                })
-                .where({
-                    ID: poId
-                });
-
-
-            // ----------------------------------------------------
-            // Response
-            // ----------------------------------------------------
-
-            return "Purchase Order approved successfully.";
+        if (!item.product_ID || quantity <= 0) {
+            return req.reject(
+                400,
+                "Product and a valid quantity are required for every line item."
+            );
         }
-    );
+
+        requiredQuantities.set(
+            item.product_ID,
+            (requiredQuantities.get(item.product_ID) || 0) + quantity
+        );
+    }
+
+    // 5. Validate all products and inventory before updating stock
+    const stockUpdates = [];
+
+    for (const [productId, requiredQuantity] of requiredQuantities) {
+        const product = await SELECT.one
+            .from(Products)
+            .where({ ID: productId });
+
+        if (!product) {
+            return req.reject(
+                404,
+                `Product ${productId} not found.`
+            );
+        }
+
+        if (!product.active) {
+            return req.reject(
+                400,
+                `Product ${product.productCode} is not active.`
+            );
+        }
+
+        // Inventory lookup using only product_ID
+        const stock = await SELECT.one
+            .from(Inventory)
+            .where({ product_ID: productId });
+
+        if (!stock) {
+            return req.reject(
+                404,
+                `Inventory record not found for product ${product.productCode}.`
+            );
+        }
+
+        const availableQuantity = Number(stock.availableQuantity || 0);
+
+        if (availableQuantity < requiredQuantity) {
+            return req.reject(
+                400,
+                `Insufficient stock for product ${product.productCode}. Available: ${availableQuantity}, Required: ${requiredQuantity}.`
+            );
+        }
+
+        stockUpdates.push({
+            stock,
+            product,
+            requiredQuantity,
+            remainingStock: availableQuantity - requiredQuantity
+        });
+    }
+
+    // 6. Deduct stock after all validations pass
+    for (const update of stockUpdates) {
+        const { stock, product, requiredQuantity, remainingStock } = update;
+
+        let inventoryStatus = "AVAILABLE";
+
+        if (remainingStock === 0) {
+            inventoryStatus = "OUT_OF_STOCK";
+        } else if (
+            remainingStock <= Number(stock.reorderLevel || 0)
+        ) {
+            inventoryStatus = "LOW_STOCK";
+        }
+
+        await UPDATE(Inventory)
+            .set({
+                availableQuantity: remainingStock,
+                lastStockUpdate: new Date(),
+                status: inventoryStatus
+            })
+            .where({ ID: stock.ID });
+    }
+
+    // 7. Update Purchase Order status
+    await UPDATE(PurchaseOrders)
+        .set({
+            status: "APPROVED",
+            rejectionReason: null
+        })
+        .where({ ID: poId });
+
+    return "Purchase Order approved successfully and stock quantity updated.";
+});
 
 
     // ============================================================
@@ -1255,6 +1333,85 @@ module.exports = cds.service.impl(async function () {
 
         return regions;
     });
+
+    this.before("CREATE", "Products", async (req) => {
+    if (!req.data.productName) {
+        return req.reject(400, "Product Name is mandatory.");
+    }
+
+    const prefix = req.data.productName
+        .trim()
+        .replace(/[^a-zA-Z]/g, "")
+        .substring(0, 3)
+        .toUpperCase();
+
+    const randomNumber = Math.floor(1000 + Math.random() * 9000);
+
+    req.data.productCode = `${prefix}-${randomNumber}`;
+});
+
+    
+
+   this.before("CREATE", "warehouse", async (req) => {
+    const city = req.data.city?.trim();
+
+    // Validate city
+    if (!city) {
+        return req.reject(
+            400,
+            "City is required to generate warehouse code"
+        );
+    }
+
+    // Generate city prefix
+    // Chennai   -> CH
+    // Hyderabad -> HY
+    // Bangalore -> BA
+    const cityPrefix = city
+        .split(/\s+/)
+        .map(word => word.substring(0, 2))
+        .join("")
+        .toUpperCase()
+        .substring(0, 2);
+
+    const prefix = `WH-${cityPrefix}-`;
+
+    // Find the latest warehouse code for this city
+    const lastWarehouse = await SELECT.one
+        .from("tafe.dealer.Warehouses")
+        .columns("warehouseCode")
+        .where({
+            warehouseCode: {
+                like: `${prefix}%`
+            }
+        })
+        .orderBy("warehouseCode desc");
+
+    let nextNumber = 1;
+
+    if (lastWarehouse?.warehouseCode) {
+        const lastNumber = parseInt(
+            lastWarehouse.warehouseCode.split("-").pop(),
+            10
+        );
+
+        if (Number.isNaN(lastNumber)) {
+            return req.reject(
+                500,
+                "Unable to determine the next warehouse code"
+            );
+        }
+
+        nextNumber = lastNumber + 1;
+    }
+
+    // Assign generated code
+    req.data.warehouseCode =
+        `${prefix}${String(nextNumber).padStart(3, "0")}`;
+});
+
+
+
 
 
 });

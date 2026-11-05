@@ -6,7 +6,7 @@ const LOG = cds.log('pricing-service');
 
 module.exports = cds.service.impl(async function () {
 
-    const { Products, PriceMaster, Regions, PriceHistory, PriceExpiryLog } = this.entities;
+    const { Products, PriceMaster, Regions, PriceHistory, PriceExpiryLog,Warehouses} = this.entities;
 
     // finalPrice = (basePrice - discountAmount) + taxAmount
     function computeFinalPrice(basePrice, discount = 0, tax = 0) {
@@ -34,23 +34,80 @@ module.exports = cds.service.impl(async function () {
     }
 
 
-    this.before('CREATE', Products, async (req) => {
-        const { productCode, productName } = req.data;
-        const errors = [];
+this.before("CREATE", Products, async (req) => {
+    const { productName, category } = req.data;
 
-        if (!productCode) errors.push('Product code is required.');
-        if (!productName) errors.push('Product name is required.');
+    // 1. Validate mandatory product name
+    if (!productName?.trim()) {
+        return req.reject(400, "Product name is required.");
+    }
 
-        if (productCode) {
-            const dup = await SELECT.one.from(Products).where({ productCode });
-            if (dup) errors.push(`Product code '${productCode}' already exists.`);
-        }
+    // 2. Normalize product name and category
+    const normalizedName = productName.trim().toLowerCase();
+    const normalizedCategory = (category || "").trim().toLowerCase();
 
-        if (errors.length) req.error(400, errors.join(' '));
+    // 3. Check for duplicate product name + category
+    const existingProducts = await SELECT.from(Products);
 
-        // sensible default if caller omits it
-        if (req.data.active === undefined) req.data.active = true;
+    const duplicate = existingProducts.find((product) => {
+        const existingName = (product.productName || "").trim().toLowerCase();
+        const existingCategory = (product.category || "").trim().toLowerCase();
+
+        return (
+            existingName === normalizedName &&
+            existingCategory === normalizedCategory
+        );
     });
+
+    if (duplicate) {
+        return req.reject(
+            400,
+            `Product '${productName.trim()}' already exists in this category.`
+        );
+    }
+
+    // 4. Generate product code from the first 3 letters
+    const prefix = productName
+        .trim()
+        .replace(/[^a-zA-Z]/g, "")
+        .substring(0, 3)
+        .toUpperCase();
+
+    if (!prefix) {
+        return req.reject(400, "Product name must contain letters.");
+    }
+
+    // 5. Generate a unique product code
+    let productCode;
+    let exists = true;
+    let attempts = 0;
+
+    while (exists && attempts < 10) {
+        const randomNumber = Math.floor(1000 + Math.random() * 9000);
+        productCode = `${prefix}-${randomNumber}`;
+
+        const existingCode = await SELECT.one
+            .from(Products)
+            .where({ productCode });
+
+        exists = !!existingCode;
+        attempts++;
+    }
+
+    if (exists) {
+        return req.reject(
+            500,
+            "Unable to generate a unique product code. Please try again."
+        );
+    }
+
+    req.data.productCode = productCode;
+
+    // 6. Default active status
+    
+        req.data.active = false;
+    
+});
 
     this.before('UPDATE', Products, async (req) => {
         const { ID, productCode } = req.data;
@@ -190,20 +247,42 @@ module.exports = cds.service.impl(async function () {
     });
 
     this.on('CREATE', PriceMaster, async (req, next) => {
-        req.data.finalPrice = computeFinalPrice(req.data.basePrice, req.data.discount, req.data.tax);
-        req.data.status = deriveStatus(req.data.validTo);
+    req.data.finalPrice = computeFinalPrice(
+        req.data.basePrice,
+        req.data.discount,
+        req.data.tax
+    );
 
-        const result = await next();
+    req.data.status = deriveStatus(req.data.validTo);
 
-        LOG.info('Price created', {
-            priceId: req.data.ID,
-            product: req.data.product_ID,
-            finalPrice: req.data.finalPrice,
-            status: req.data.status
-        });
+    const result = await next();
 
-        return result;
+    const productId = req.data.product_ID;
+
+    // Check whether an inventory record exists
+    const inventory = await SELECT.one
+        .from(Inventory)
+        .where({ product_ID: productId });
+
+    // Activate only when the price is ACTIVE and inventory exists
+    const shouldBeActive =
+        req.data.status === 'ACTIVE' &&
+        Boolean(inventory);
+
+    await UPDATE(Products)
+        .set({ active: shouldBeActive })
+        .where({ ID: productId });
+
+    LOG.info('Price created', {
+        priceId: req.data.ID,
+        product: productId,
+        finalPrice: req.data.finalPrice,
+        status: req.data.status,
+        productActive: shouldBeActive
     });
+
+    return result;
+});
 
     // ---- UPDATE ----
     this.before('UPDATE', PriceMaster, async (req) => {
@@ -324,38 +403,131 @@ module.exports = cds.service.impl(async function () {
 
     // called on a cron by SAP Job Scheduler (also callable manually)
     this.on('expirePrices', async (req) => {
-
+ 
+        const { ID } = req.data;
+console.log(ID);
+ 
         const today = new Date().toISOString().slice(0, 10);
-
-        const expiredCandidates = await SELECT.from(PriceMaster)
+ 
+        let expiredCount = 0;
+ 
+        if (ID) {
+ 
+            const oPrice = await SELECT.one .from(PriceMaster) .where({ ID: ID });
+ 
+            if (!oPrice) {
+                return req.reject( 404, "Price record not found." );
+            }
+            // Already expired
+           
+            if ( oPrice.status === "EXPIRED" || oPrice.active === false ) {
+                return req.reject( 400, "The selected price is already inactive or expired." );
+            }
+           
+            // Expire selected record
+           
+            await UPDATE(PriceMaster).set({ status: "EXPIRED", active: false }).where({ ID: ID });
+            expiredCount = 1;
+ 
+            // Create expiry log
+           
+            await INSERT.into(PriceExpiryLog).entries({ runOn: new Date().toISOString(),
+                                                        expiredCount: 1,
+                                                        details: "Price record manually marked as EXPIRED.",
+                                                        triggeredBy: "MANUAL" });
+           
+            LOG.info("Manual price expiry executed", { priceId: ID });
+            return { expiredCount: 1, message: "Selected price record marked as EXPIRED." };
+ 
+        } else {
+ 
+            const expiredCandidates = await SELECT.from(PriceMaster)
             .where({ validTo: { '<': today }, status: { '!=': 'EXPIRED' } });
-
-        if (expiredCandidates.length > 0) {
-            await UPDATE(PriceMaster)
-                .set({ status: 'EXPIRED' })
-                .where({ validTo: { '<': today }, status: { '!=': 'EXPIRED' } });
+ 
+            if (expiredCandidates.length > 0) {
+ 
+                await UPDATE(PriceMaster).set({ status: 'EXPIRED' })
+                    .where({ validTo: { '<': today }, status: { '!=': 'EXPIRED' } });
+            }
+ 
+            const expiredCount = expiredCandidates.length;
+ 
+            await INSERT.into(PriceExpiryLog).entries({
+                                    runOn: new Date().toISOString(),
+                                    expiredCount,
+                                    details: `Marked ${expiredCount} price record(s) as EXPIRED.`,
+                                    triggeredBy: req.user?.id === 'SYSTEM' ? 'JOB_SCHEDULER' : (req.data.triggeredBy || 'MANUAL')
+            });
+ 
+            LOG.info('Expiry job executed', { expiredCount });
+ 
+            return {
+                expiredCount,
+                message: `${expiredCount} price record(s) marked as EXPIRED.`
+            };
         }
-
-        const expiredCount = expiredCandidates.length;
-
-        await INSERT.into(PriceExpiryLog).entries({
-            runOn: new Date().toISOString(),
-            expiredCount,
-            details: `Marked ${expiredCount} price record(s) as EXPIRED.`,
-            triggeredBy: req.user?.id === 'SYSTEM' ? 'JOB_SCHEDULER' : (req.data.triggeredBy || 'MANUAL')
-        });
-
-        LOG.info('Expiry job executed', { expiredCount });
-
-        return {
-            expiredCount,
-            message: `${expiredCount} price record(s) marked as EXPIRED.`
-        };
+       
     });
 
     this.on('getActivePriceCount', async () => {
         const result = await SELECT.one`count(*) as count`.from(PriceMaster).where({ status: 'ACTIVE' });
         return result ? result.count : 0;
+    });
+
+//     this.before("CREATE", "Products", async (req) => {
+//     if (!req.data.productName) {
+//         return req.reject(400, "Product Name is mandatory.");
+//     }
+
+//     const prefix = req.data.productName
+//         .trim()
+//         .replace(/[^a-zA-Z]/g, "")
+//         .substring(0, 3)
+//         .toUpperCase();
+
+//     const randomNumber = Math.floor(1000 + Math.random() * 9000);
+
+//     req.data.productCode = `${prefix}-${randomNumber}`;
+// });
+
+this.before("CREATE", Warehouses, async (req) => {
+        const { city } = req.data;
+
+        if (!city) {
+            return req.reject(400, "City is required to generate warehouse code");
+        }
+
+        // Chennai -> CH, Hyderabad -> HY, Bangalore -> BA
+        const cityPrefix = city
+            .trim()
+            .split(/\s+/)
+            .map(word => word.substring(0, 2))
+            .join("")
+            .toUpperCase()
+            .substring(0, 2);
+
+        const prefix = `WH-${cityPrefix}-`;
+
+        // Find the latest code for this city prefix
+        const lastWarehouse = await SELECT.one
+            .from(Warehouses)
+            .columns("warehouseCode")
+            .where({ warehouseCode: { like: `${prefix}%` } })
+            .orderBy({ warehouseCode: "desc" });
+
+        let nextNumber = 1;
+
+        if (lastWarehouse?.warehouseCode) {
+            const lastNumber = parseInt(
+                lastWarehouse.warehouseCode.split("-").pop(),
+                10
+            );
+
+            nextNumber = lastNumber + 1;
+        }
+
+        req.data.warehouseCode =
+            `${prefix}${String(nextNumber).padStart(3, "0")}`;
     });
 
 });

@@ -4,6 +4,7 @@ version: 1.0.0
 description: "A simple CAP project."
 parameters:
   enable-parallel-deployments: true
+  deploy_mode: html5-repo
 build-parameters:
   before-all:
     - builder: custom
@@ -25,6 +26,9 @@ modules:
           srv-url: ${default-url}
     requires:
       - name: TAFE-db
+      # One destination instance only. It also resolves the subaccount
+      # destinations purchasebpi and CityAPI used by the service code.
+      - name: TAFE-destination
 
   - name: TAFE-db-deployer
     type: hdb
@@ -34,9 +38,137 @@ modules:
     requires:
       - name: TAFE-db
 
+  - name: TAFE
+    type: approuter.nodejs
+    path: .deploy/app-router
+    parameters:
+      keep-existing-routes: true
+      disk-quota: 256M
+      memory: 256M
+    requires:
+      - name: srv-api
+        group: destinations
+        properties:
+          name: srv-api # must be used in xs-app.json as well
+          url: ~{srv-url}
+          forwardAuthToken: true
+      - name: TAFE-destination
+      - name: TAFE-html5-runtime
+    provides:
+      - name: app-api
+        properties:
+          app-protocol: ${protocol}
+          app-uri: ${default-uri}
+
+  - name: TAFE-app-deployer
+    type: com.sap.application.content
+    path: gen
+    build-parameters:
+      build-result: app/
+      requires:
+        - name: TAFEdealercrud
+          artifacts:
+            - dealercrud.zip
+          target-path: app/
+        # Second UI app: uncomment together with the TAFEdealermangement
+        # module below, and use the real .zip file name.
+        # - name: TAFEdealermangement
+        #   artifacts:
+        #     - dealermangement.zip
+        #   target-path: app/
+    requires:
+      - name: srv-api
+      - name: TAFE-html5-repo-host
+        parameters:
+          content-target: true
+          config:
+            HTML5Runtime_enabled: true
+    parameters:
+      config:
+        destinations:
+          - Name: srv-api
+            URL: ~{srv-api/srv-url}
+            Authentication: NoAuthentication
+            Type: HTTP
+            ProxyType: Internet
+            ForwardAuthToken: true
+            DynamicDestination: true
+
+  - name: TAFEdealercrud
+    type: html5
+    path: app/dealercrud
+    build-parameters:
+      build-result: dist
+      builder: custom
+      commands:
+        - npm ci
+        - npm run build
+      supported-platforms:
+        []
+
+  # Second UI app (dealermangement).
+  # 1. Run "npm run build" once in app/dealermangement and check the name of
+  #    the .zip file that appears in its dist/ folder.
+  # 2. Uncomment this module and the artifact lines in TAFE-app-deployer,
+  #    and replace dealermangement.zip with the real file name.
+  # - name: TAFEdealermangement
+  #   type: html5
+  #   path: app/dealermangement
+  #   build-parameters:
+  #     build-result: dist
+  #     builder: custom
+  #     commands:
+  #       - npm ci
+  #       - npm run build
+  #     supported-platforms:
+  #       []
+
+  - name: TAFE-destinations
+    type: com.sap.application.content
+    requires:
+      - name: TAFE-html5-repo-host
+        parameters:
+          service-key:
+            name: TAFE-html5-repo-host-key
+      - name: srv-api
+      - name: TAFE-destination
+        parameters:
+          content-target: true
+    build-parameters:
+      no-source: true
+    parameters:
+      content:
+        instance:
+          existing_destinations_policy: update
+          destinations:
+            - Name: TAFE-html5-repository
+              ServiceInstanceName: TAFE-html5-repo-host
+              ServiceKeyName: TAFE-html5-repo-host-key
+              sap.cloud.service: TAFE.service
+
 resources:
   - name: TAFE-db
     type: com.sap.xs.hdi-container
     parameters:
       service: hana
       service-plan: hdi-shared
+
+  - name: TAFE-destination
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: destination
+      service-plan: lite
+    requires:
+      - name: srv-api
+
+  - name: TAFE-html5-repo-host
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: html5-apps-repo
+      service-plan: app-host
+
+  - name: TAFE-html5-runtime
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: html5-apps-repo
+      service-plan: app-runtime

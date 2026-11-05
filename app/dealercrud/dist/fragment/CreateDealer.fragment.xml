@@ -1,0 +1,46 @@
+<core:FragmentDefinition
+  xmlns="sap.m"
+  xmlns:core="sap.ui.core"
+  xmlns:f="sap.ui.layout.form">
+
+  <Dialog id="createDealerDialog" title="Create Dealer" contentWidth="32rem">
+    <f:SimpleForm editable="true" layout="ResponsiveGridLayout">
+      <Label text="Dealer Name" required="true"/>
+      <Input value="{form>/dealerName}"/>
+
+      <Label text="Dealer Type" required="true"/>
+      <Select selectedKey="{form>/dealerType}">
+        <core:Item key="DEALER" text="Dealer"/>
+        <core:Item key="DISTRIBUTOR" text="Distributor"/>
+        <core:Item key="RETAILER" text="Retailer"/>
+      </Select>
+
+      <Label text="GST Number" required="true"/>
+      <Input value="{form>/gstNumber}" maxLength="15"/>
+
+      <Label text="PAN Number" required="true"/>
+      <Input value="{form>/panNumber}" maxLength="10"/>
+
+      <Label text="Phone"/>
+      <Input value="{form>/phone}" type="Tel"/>
+
+      <Label text="Email"/>
+      <Input value="{form>/email}" type="Email"/>
+
+      <Label text="City"/>
+      <Input value="{form>/city}"/>
+
+      <Label text="State"/>
+      <ComboBox selectedKey="{form>/state}" items="{lookup>/states}">
+        <core:Item key="{lookup>key}" text="{lookup>text}"/>
+      </ComboBox>
+    </f:SimpleForm>
+
+    <beginButton>
+      <Button text="Save" type="Emphasized" press=".onSaveDealer"/>
+    </beginButton>
+    <endButton>
+      <Button text="Cancel" press=".onCancelDealer"/>
+    </endButton>
+  </Dialog>
+</core:FragmentDefinition>

@@ -26,23 +26,11 @@ type PricingStatus : String enum {
     EXPIRED;
     INACTIVE;
 }
-
-
-/* =========================================================
-   DEALER TYPE
-   ========================================================= */
-
 type DealerType : String enum {
     DEALER;
     DISTRIBUTOR;
     RETAILER;
 }
-
-
-/* =========================================================
-   DEALER
-   ========================================================= */
-
 entity Dealer : cuid, managed {
 
     dealerCode : String(20);
@@ -79,12 +67,10 @@ entity Dealer : cuid, managed {
 
     approvalHistory : Composition of many OnboardingApprovals
         on approvalHistory.dealer = $self;
+
+    purchase : Composition of many PurchaseOrders on purchase.dealer=$self
+    
 }
-
-
-/* =========================================================
-   DEALER DOCUMENTS
-   ========================================================= */
 
 entity DealerDocuments : cuid {
 
@@ -98,9 +84,6 @@ entity DealerDocuments : cuid {
 }
 
 
-/* =========================================================
-   DEALER ONBOARDING APPROVAL HISTORY
-   ========================================================= */
 
 entity OnboardingApprovals : cuid, managed {
 
@@ -116,11 +99,6 @@ entity OnboardingApprovals : cuid, managed {
 
     dealer : Association to Dealer;
 }
-
-
-/* =========================================================
-   PURCHASE ORDERS
-   ========================================================= */
 
 entity PurchaseOrders : cuid, managed {
 
@@ -144,14 +122,12 @@ entity PurchaseOrders : cuid, managed {
 
     dealer : Association to Dealer;
 
+   // warehouse : Association to Warehouses;
+
     items : Composition of many POLineItems
         on items.purchaseOrder = $self;
 }
 
-
-/* =========================================================
-   PO LINE ITEMS
-   ========================================================= */
 
 entity POLineItems : cuid {
 
@@ -166,20 +142,15 @@ entity POLineItems : cuid {
     purchaseOrder : Association to PurchaseOrders;
 }
 
-
-/* =========================================================
-   PRODUCTS
-   ========================================================= */
-
 entity Products : cuid, managed {
 
-    productCode : String(20) @mandatory;
+    productCode : String(20) ;
 
     productName : String(100) @mandatory;
 
     category : String(50);
 
-    active : Boolean default true;
+    active : Boolean default false;
 
     unitPrice : Decimal(15,2);
 

@@ -5,25 +5,33 @@
     "@cap-js/hana": "^3",
     "@sap-cloud-sdk/connectivity": "^4.9.1",
     "@sap-cloud-sdk/http-client": "^4.9.1",
-    "@sap/cds": "^10.1.0"
+    "@sap/cds": "^10.1.1"
   },
   "devDependencies": {
     "@cap-js/sqlite": "^3.1.0",
-    "@sap/cds-dk": "^10.1.0"
+    "@sap/cds-dk": "^10.1.0",
+    "cds-plugin-ui5": "^0.17.0"
   },
   "scripts": {
-    "start": "cds-serve"
+    "start": "cds-serve",
+    "watch-dealercrud": "cds bind --exec -- cds watch --profile hybrid --open dc.dealercrud/index.html?sap-ui-xx-viewCache=false --livereload false"
   },
   "cds": {
     "requires": {
       "auth": "mocked",
-      "credentials": {
-        "destination": "purchasebpi"
-      }
+      "destinations": true,
+      "html5-repo": true,
+      "workzone": true
     },
     "server": {
       "index": true
     }
   },
-  "private": true
+  "private": true,
+  "workspaces": [
+    "app/*"
+  ],
+  "sapux": [
+    "app/dealercrud"
+  ]
 }
